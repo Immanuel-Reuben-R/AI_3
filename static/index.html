@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DermatoScan Pro AI - Advanced Cyber-Tactile Bento</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Ambient Aurora Background Layer -->
+    <canvas id="dotsCanvas"></canvas>
+    <div class="aurora-container" aria-hidden="true">
+        <div class="aurora-blob aurora-1"></div>
+        <div class="aurora-blob aurora-2"></div>
+        <div class="aurora-blob aurora-3"></div>
+        <div class="aurora-blob aurora-4"></div>
+    </div>
+
+    <!-- Header Navbar -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand-box">
+                <div class="brand-icon">
+                    <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="9"/>
+                        <path d="M12 7v10M7 12h10"/>
+                        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <div class="brand-title">DermatoScan Pro <span class="brand-badge">AI 2.0</span></div>
+                    <div class="brand-sub">Clinical Melanoma & Skin Lesion Diagnostic Platform</div>
+                </div>
+            </div>
+
+            <div class="header-status">
+                <div class="model-badge" title="Trained model path on system">
+                    <span class="pulse-dot"></span>
+                    <span id="modelPathLabel">Model: PyTorch ResNet50 (F:\BEST RUN)</span>
+                </div>
+                
+                <div class="status-pill online" id="serverStatusPill">
+                    <span class="status-dot"></span> <span id="serverStatusText">API Online</span>
+                </div>
+
+                <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Dark/Light Theme" style="display: none;">
+                    <svg aria-hidden="true" id="themeIconSun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg aria-hidden="true" id="themeIconMoon" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="main-content">
+        <!-- BENTO BOX GRID -->
+        <div class="bento-grid">
+            
+            <!-- Bento Box 1: Scanner -->
+            <div class="card bento-scanner">
+                <div class="card-header">
+                    <h2>Skin Lesion Image Acquisition</h2>
+                    <span class="header-subtitle">Upload Dermoscopy photo or use live dermatoscope camera</span>
+                </div>
+                <div class="upload-dropzone" id="dropzone" style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+                    <input type="file" id="fileInput" accept="image/*" class="hidden-input">
+                    <div id="dropzoneContent" class="dropzone-body">
+                        <div class="upload-icon-ring" style="width: 80px; height: 80px; margin-bottom: 15px;">
+                            <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+                        </div>
+                        <h3 style="font-size: 1.8rem; margin-bottom: 10px;">Upload Lesion Image</h3>
+                        <p style="font-size: 1.1rem; margin-bottom: 15px;">or <button type="button" class="btn-link" id="browseBtn" style="font-size: 1.1rem;">Browse from device</button></p>
+                        <span class="file-limits">Supports JPG, PNG, WEBP</span>
+                    </div>
+                    <div id="previewContainer" class="preview-box hidden">
+                        <img id="imagePreview" src="" alt="Lesion Preview">
+                        <button type="button" id="removeImgBtn" class="btn-close" aria-label="Remove image">&times;</button>
+                    </div>
+                    <div id="cameraBox" class="camera-box hidden">
+                        <video id="webcamVideo" autoplay playsinline muted></video>
+                        <div class="camera-controls">
+                            <button type="button" id="snapBtn" class="btn btn-secondary">📸 Capture Snapshot</button>
+                            <button type="button" id="closeCamBtn" class="btn btn-outline">Close Camera</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="input-actions" style="margin-top: 15px;">
+                    <button type="button" id="openCamBtn" class="btn btn-secondary" style="width: 100%;">
+                        Use Live Dermatoscope / Camera
+                    </button>
+                </div>
+                <div class="samples-section">
+                    <div class="samples-title">Or test with dataset reference samples:</div>
+                    <div class="sample-chips">
+                        <button type="button" class="sample-chip" data-sample="melanoma"><span class="chip-dot danger"></span> Melanoma</button>
+                        <button type="button" class="sample-chip" data-sample="nevus"><span class="chip-dot success"></span> Nevus</button>
+                        <button type="button" class="sample-chip" data-sample="bcc"><span class="chip-dot warning"></span> BCC</button>
+                        <button type="button" class="sample-chip" data-sample="sk"><span class="chip-dot info"></span> SK</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Box 2: Dashboard Risk Gauge (Right Panel) -->
+            <div class="card bento-risk-gauge dashboard-top-banner">
+                <div style="display: flex; gap: 20px; align-items: center;">
+                    <div class="risk-gauge-inner">
+                        <div class="gauge-container">
+                            <svg class="gauge-svg" viewBox="0 0 120 120" role="progressbar" aria-valuenow="0" aria-label="Melanoma Risk">
+                                <circle class="gauge-bg" cx="60" cy="60" r="50"/>
+                                <circle class="gauge-fill" id="gaugeCircle" cx="60" cy="60" r="50" stroke-dasharray="314.15" stroke-dashoffset="314.15"/>
+                            </svg>
+                            <div class="gauge-text">
+                                <span id="probPercentVal" class="gauge-number" style="font-size: 1.8rem; font-weight: 900;">0.0%</span>
+                                <span class="gauge-label">MELANOMA RISK</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="prediction-summary-inner">
+                        <div class="pred-header">
+                            <span id="riskCategoryPill" class="pill-badge ready">READY FOR SCAN</span>
+                            <span id="confidenceValue" class="confidence-tag">Confidence: --%</span>
+                        </div>
+                        <h1 id="predictionTitle" class="prediction-heading" style="font-size: 2rem; font-weight: 900; line-height: 1.1;">Awaiting Image</h1>
+                        
+                        <!-- Result Summary Pill -->
+                        <div style="margin-bottom: 10px;">
+                            <span class="result-summary-pill" style="display: inline-block; padding: 8px 16px; background-color: var(--bg-card-inner); border-left: 4px solid var(--accent-primary); font-weight: bold; border-radius: 4px; box-shadow: var(--card-shadow-inner);">
+                                Result: <span id="summaryResultText">Benign</span>
+                            </span>
+                        </div>
+
+                        <p id="recommendationText" class="recommendation-box">
+                            Upload a dermoscopy image to compute risk analysis.
+                        </p>
+                        
+                        <!-- Image Quality Panel -->
+                        <div class="image-quality-panel" style="margin-bottom: 15px; padding: 10px; background: var(--bg-card-inner); border-radius: var(--radius-sm); font-size: 0.8rem; box-shadow: var(--card-shadow-inner);">
+                            <div style="font-weight: bold; margin-bottom: 5px; color: var(--text-secondary);">Image Quality Controls</div>
+                            <div style="display: flex; gap: 10px; justify-content: space-between;">
+                                <span>Blur: <span style="color: var(--status-success);">Optimal</span></span>
+                                <span>Lighting: <span style="color: var(--status-warning);">Acceptable</span></span>
+                                <span>Focus: <span style="color: var(--status-success);">Sharp</span></span>
+                            </div>
+                        </div>
+
+                        <div class="meta-pills">
+                            <span id="latencyPill" class="meta-pill">Latency: -- ms</span>
+                            <span id="devicePill" class="meta-pill">PyTorch CPU</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Box 3: Controls (Left Panel) -->
+            <div class="card bento-controls settings-card" style="display: flex; flex-direction: column;">
+                <div class="card-header">
+                    <h2>AI Inference & Preprocessing</h2>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="hairRemovalToggle" class="setting-label">DullRazor™ Filter</label>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="hairRemovalToggle" role="switch" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <label for="ttaToggle" class="setting-label">Test-Time Augmentation</label>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="ttaToggle" role="switch" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-item vertical">
+                    <div class="setting-header-row">
+                        <label for="thresholdSlider" class="setting-label">Decision Threshold</label>
+                        <span id="thresholdValueDisplay" class="setting-val-badge">0.41</span>
+                    </div>
+                    <input type="range" id="thresholdSlider" min="0.10" max="0.90" step="0.01" value="0.41" class="custom-slider">
+                </div>
+                <button type="button" id="runScanBtn" class="btn btn-primary btn-xl" style="font-size: 1.5rem; font-weight: 900; padding: 20px; margin-top: auto; box-shadow: 0 10px 20px rgba(128, 0, 32, 0.2);">
+                    <span>RUN SCAN</span>
+                </button>
+            </div>
+
+            <!-- Bento Box 4: Viewer (Center Panel) -->
+            <div class="card bento-viewer image-viewer-card">
+                <div class="card-header space-between">
+                    <h2>Visual Analysis</h2>
+                    <div class="view-switch-btns">
+                        <button type="button" class="view-btn active" data-view="original">Original</button>
+                        <button type="button" class="view-btn" data-view="processed">Processed</button>
+                        <button type="button" class="view-btn highlight" data-view="heatmap">Grad-CAM</button>
+                    </div>
+                </div>
+                <div class="viewer-display-box" style="height: 100%; display: flex; align-items: center; justify-content: center; background: #000; border-radius: var(--radius-md);">
+                    <img id="viewerImage" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'><rect width='400' height='300' fill='%230A0A0E'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%236B5B60' font-family='sans-serif' font-size='16'>No image analyzed yet</text></svg>" alt="Dermoscopy Lesion View" style="max-height: 100%; max-width: 100%; object-fit: contain;">
+                    <div id="heatmapLegend" class="heatmap-legend hidden">
+                        <span>Low</span>
+                        <div class="gradient-bar"></div>
+                        <span>High</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Box 5: ABCDE (Right Panel) -->
+            <div class="card bento-abcde abcde-card">
+                <div class="card-header">
+                    <h2>ABCDE Metrics</h2>
+                </div>
+                <div class="abcde-list">
+                    <div class="abcde-item">
+                        <div class="abcde-head">
+                            <span class="abcde-letter">A</span>
+                            <div class="abcde-title">
+                                <strong id="abcdeAsymmetryLabel">Asymmetry Index</strong>
+                            </div>
+                            <span id="abcdeAsymmetryScore" class="abcde-val">0/10</span>
+                        </div>
+                        <svg class="radial-progress" viewBox="0 0 36 36" role="progressbar" aria-valuenow="0" aria-valuemax="10" aria-labelledby="abcdeAsymmetryLabel">
+                            <path class="radial-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="abcdeAsymmetryBar" class="radial-fill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                    </div>
+                    <div class="abcde-item">
+                        <div class="abcde-head">
+                            <span class="abcde-letter">B</span>
+                            <div class="abcde-title">
+                                <strong id="abcdeBorderLabel">Border Irregularity</strong>
+                            </div>
+                            <span id="abcdeBorderScore" class="abcde-val">0/10</span>
+                        </div>
+                        <svg class="radial-progress" viewBox="0 0 36 36" role="progressbar" aria-valuenow="0" aria-valuemax="10" aria-labelledby="abcdeBorderLabel">
+                            <path class="radial-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="abcdeBorderBar" class="radial-fill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                    </div>
+                    <div class="abcde-item">
+                        <div class="abcde-head">
+                            <span class="abcde-letter">C</span>
+                            <div class="abcde-title">
+                                <strong id="abcdeColorLabel">Color Variation</strong>
+                            </div>
+                            <span id="abcdeColorScore" class="abcde-val">0/10</span>
+                        </div>
+                        <svg class="radial-progress" viewBox="0 0 36 36" role="progressbar" aria-valuenow="0" aria-valuemax="10" aria-labelledby="abcdeColorLabel">
+                            <path class="radial-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="abcdeColorBar" class="radial-fill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                    </div>
+                    <div class="abcde-item">
+                        <div class="abcde-head">
+                            <span class="abcde-letter">D</span>
+                            <div class="abcde-title">
+                                <strong>Estimated Diameter</strong>
+                            </div>
+                            <span id="abcdeDiameterVal" class="abcde-val">0 mm</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-actions" style="margin-top: 20px; display: flex; gap: 10px;">
+                    <button type="button" id="printReportBtn" class="btn btn-secondary">Print PDF</button>
+                    <button type="button" id="pushEsp32Btn" class="btn btn-outline">Push to OLED</button>
+                </div>
+            </div>
+
+            <!-- Bento Box 6: Hardware Sync -->
+            <div class="card bento-hardware">
+                <div class="card-header">
+                    <h2>Mobile & OLED Sync</h2>
+                </div>
+                <div class="qr-container" style="display:flex; gap: 15px; margin-bottom: 20px;">
+                    <img id="qrCodeImg" src="" alt="Mobile QR" class="qr-img">
+                    <div class="qr-details">
+                        <span class="ip-label" style="display:block; font-size:0.8rem;">Network Link:</span>
+                        <code id="localUrlCode" class="ip-code">http://127.0.0.1:8080</code>
+                    </div>
+                </div>
+                
+                <div class="esp-config-form">
+                    <input type="text" id="espIpInput" class="form-input" placeholder="ESP32 IP e.g., 192.168.1.150" style="width: 100%; padding: 8px; margin-bottom: 10px; background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); color: #fff; border-radius: 4px;">
+                    <button type="button" id="saveEspBtn" class="btn btn-secondary" style="width: 100%;">Connect & Save</button>
+                </div>
+                <div class="oled-simulator-box" style="margin-top: 15px;">
+                    <div class="oled-screen">
+                        <div class="oled-header">DERMATOSCAN PRO</div>
+                        <div class="oled-divider">---</div>
+                        <div id="oledPred" class="oled-pred">READY</div>
+                        <div id="oledRisk" class="oled-risk">[ SCAN ]</div>
+                        <div class="oled-footer">
+                            RISK: <span id="oledPct">0.0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Box 7: Gemini AI (Right Panel) -->
+            <div class="card bento-gemini">
+                <div class="card-header space-between">
+                    <div>
+                        <h2>Gemini AI Consultation</h2>
+                    </div>
+                    <button type="button" id="fetchGeminiBtn" class="btn btn-primary">
+                        <span>Request Assessment</span>
+                    </button>
+                </div>
+                <div id="geminiOutput" class="gemini-output-box" style="padding: 15px; min-height: 80px;">
+                    <div class="gemini-placeholder">
+                        <p style="color: var(--text-muted); font-size: 0.9rem;">Click "Request Assessment" for a visual AI clinical opinion.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bento Box 8: Model Specs -->
+            <div class="card bento-model">
+                <div class="card-header">
+                    <h2>PyTorch Architecture & Training Specs</h2>
+                </div>
+                <div class="metrics-summary-grid">
+                    <div class="metric-box"><span class="metric-val">91.6%</span><span class="metric-lbl">Accuracy</span></div>
+                    <div class="metric-box"><span class="metric-val">91.5%</span><span class="metric-lbl">Sensitivity</span></div>
+                    <div class="metric-box"><span class="metric-val">82.0%</span><span class="metric-lbl">Specificity</span></div>
+                    <div class="metric-box"><span class="metric-val">0.965</span><span class="metric-lbl">AUC</span></div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- App Footer -->
+    <footer class="app-footer">
+        <div class="footer-container">
+            <span>DermatoScan Pro AI</span>
+            <span class="footer-disclaimer">⚠️ Academic & Proof-of-Concept Research Tool. Not for direct standalone medical diagnosis.</span>
+        </div>
+    </footer>
+
+    <script src="dots.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
