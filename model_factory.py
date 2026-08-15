@@ -105,10 +105,13 @@ def is_skin(image_tensor):
     probs = exp_logits / np.sum(exp_logits)
     
     # Get the predicted class (0 = not_skin, 1 = skin) and its confidence
-    predicted_class = np.argmax(probs)
+    # Dataset was heavily imbalanced (12.5k negative vs 3k positive), 
+    # causing the model to output very low confidence for positive class.
+    # Lower the threshold to 0.05 to compensate.
     skin_confidence = float(probs[1])
+    is_skin_bool = skin_confidence > 0.05
     
-    return predicted_class == 1, skin_confidence
+    return is_skin_bool, skin_confidence
 
 
 def remove_hair_dullrazor(pil_img):
