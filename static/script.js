@@ -372,7 +372,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const resBlob = await fetch(state.currentImageB64);
             const blob = await resBlob.blob();
             const formData = new FormData();
-            formData.append('file', blob, 'image.jpg');
+            formData.append('image', blob, 'image.jpg');
+
 
             const uploadResp = await fetch('/api/upload', {
                 method: 'POST',
@@ -465,9 +466,9 @@ document.addEventListener('DOMContentLoaded', () => {
         riskCategoryPill.textContent = data.risk_level || 'LOW RISK';
 
         // Meta tags
-        latencyPill.textContent = `Latency: ${data.latency_ms || 0} ms`;
-        devicePill.textContent = `Device: ${data.device || 'PyTorch'}`;
-        hairRemovalPill.textContent = `DullRazor: ${data.hair_removal_applied ? 'Applied' : 'Disabled'}`;
+        if (latencyPill) latencyPill.textContent = `Latency: ${data.latency_ms || 0} ms`;
+        if (devicePill) devicePill.textContent = `Device: ${data.device || 'PyTorch'}`;
+        if (hairRemovalPill) hairRemovalPill.textContent = `DullRazor: ${data.hair_removal_applied ? 'Applied' : 'Disabled'}`;
 
         // Initial view image
         state.activeView = 'original';
@@ -476,32 +477,32 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update ABCDE scores
         if (data.abcde) {
             const a = data.abcde.asymmetry;
-            abcdeAsymmetryScore.textContent = `${a.score}/10`;
-            abcdeAsymmetryStatus.textContent = a.level;
-            abcdeAsymmetryBar.style.width = `${a.score * 10}%`;
+            if (abcdeAsymmetryScore) abcdeAsymmetryScore.textContent = `${a.score}/10`;
+            if (abcdeAsymmetryStatus) abcdeAsymmetryStatus.textContent = a.level;
+            if (abcdeAsymmetryBar) abcdeAsymmetryBar.style.width = `${a.score * 10}%`;
 
             const b = data.abcde.border;
-            abcdeBorderScore.textContent = `${b.score}/10`;
-            abcdeBorderStatus.textContent = b.level;
-            abcdeBorderBar.style.width = `${b.score * 10}%`;
+            if (abcdeBorderScore) abcdeBorderScore.textContent = `${b.score}/10`;
+            if (abcdeBorderStatus) abcdeBorderStatus.textContent = b.level;
+            if (abcdeBorderBar) abcdeBorderBar.style.width = `${b.score * 10}%`;
 
             const c = data.abcde.color;
-            abcdeColorScore.textContent = `${c.score}/10`;
-            abcdeColorStatus.textContent = c.level;
-            abcdeColorBar.style.width = `${c.score * 10}%`;
+            if (abcdeColorScore) abcdeColorScore.textContent = `${c.score}/10`;
+            if (abcdeColorStatus) abcdeColorStatus.textContent = c.level;
+            if (abcdeColorBar) abcdeColorBar.style.width = `${c.score * 10}%`;
 
             const d = data.abcde.diameter;
-            abcdeDiameterVal.textContent = d.value;
-            abcdeDiameterStatus.textContent = d.level;
+            if (abcdeDiameterVal) abcdeDiameterVal.textContent = d.value;
+            if (abcdeDiameterStatus) abcdeDiameterStatus.textContent = d.level;
 
             const e = data.abcde.evolution;
-            abcdeEvolutionStatus.textContent = e.status;
+            if (abcdeEvolutionStatus) abcdeEvolutionStatus.textContent = e.status;
         }
 
         // Push to OLED Simulator
-        oledPred.textContent = data.prediction.toUpperCase();
-        oledRisk.textContent = `[ ${data.risk_code} ]`;
-        oledPct.textContent = `${probPct.toFixed(1)}%`;
+        if (oledPred) oledPred.textContent = data.prediction.toUpperCase();
+        if (oledRisk) oledRisk.textContent = `[ ${data.risk_code} ]`;
+        if (oledPct) oledPct.textContent = `${probPct.toFixed(1)}%`;
     }
 
     // ---------------------------------------------------------
@@ -613,5 +614,101 @@ document.addEventListener('DOMContentLoaded', () => {
     printReportBtn.addEventListener('click', () => {
         window.print();
     });
-
 });
+
+// ---------------------------------------------------------
+// Dot Matrix Ripple Effect
+// ---------------------------------------------------------
+(function initDotMatrix() {
+    const canvas = document.getElementById('dotMatrixCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    let width, height;
+    let dots = [];
+    const spacing = 25; // Space between dots
+    const baseRadius = 1.5;
+    
+    let mouse = { x: -1000, y: -1000 };
+    
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        initDots();
+    }
+    
+    function initDots() {
+        dots = [];
+        for (let x = 0; x < width; x += spacing) {
+            for (let y = 0; y < height; y += spacing) {
+                dots.push({
+                    baseX: x,
+                    baseY: y,
+                    x: x,
+                    y: y,
+                    vx: 0,
+                    vy: 0
+                });
+            }
+        }
+    }
+    
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', (e) => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+    });
+    window.addEventListener('touchmove', (e) => {
+        if(e.touches.length > 0) {
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+        }
+    });
+    
+    function animate() {
+        ctx.clearRect(0, 0, width, height);
+        const isDark = document.body.classList.contains('theme-dark');
+        ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)';
+        
+        for (let i = 0; i < dots.length; i++) {
+            let dot = dots[i];
+            
+            let dx = mouse.x - dot.x;
+            let dy = mouse.y - dot.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            
+            let maxDist = 120;
+            
+            if (dist < maxDist) {
+                let force = (maxDist - dist) / maxDist;
+                let angle = Math.atan2(dy, dx);
+                let pushX = Math.cos(angle) * force * 5;
+                let pushY = Math.sin(angle) * force * 5;
+                dot.vx -= pushX;
+                dot.vy -= pushY;
+            }
+            
+            let springX = (dot.baseX - dot.x) * 0.15;
+            let springY = (dot.baseY - dot.y) * 0.15;
+            dot.vx += springX;
+            dot.vy += springY;
+            
+            dot.vx *= 0.8;
+            dot.vy *= 0.8;
+            
+            dot.x += dot.vx;
+            dot.y += dot.vy;
+            
+            ctx.beginPath();
+            ctx.arc(dot.x, dot.y, baseRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        requestAnimationFrame(animate);
+    }
+    
+    resize();
+    animate();
+})();
