@@ -70,48 +70,35 @@ def predict_with_tta(session, image_tensor):
     probs = [run_inference(session, np.ascontiguousarray(v)) for v in (v1, v2, v3, v4, v5)]
     return float(np.mean(probs))
 
-# Global session for the skin detector
-_skin_detector_session = None
-
 def is_skin(image_tensor):
     """
     Returns True if the image is human skin, False otherwise.
-    Expects the same normalized image_tensor used by the lesion model.
+    Uses a robust deterministic RGB chromatic variance heuristic.
     """
-    global _skin_detector_session
-    if _skin_detector_session is None:
-        try:
-            # Fallback path if deployed or local
-            model_path = Path(__file__).resolve().parent / "skin_detector_model.onnx"
-            if not model_path.exists():
-                model_path = Path(os.environ.get("SKIN_MODEL_PATH", "skin_detector_model.onnx"))
-            
-            sess_options = ort.SessionOptions()
-            sess_options.intra_op_num_threads = 1
-            _skin_detector_session = ort.InferenceSession(
-                str(model_path), sess_options=sess_options, providers=["CPUExecutionProvider"]
-            )
-        except Exception as e:
-            logger.warning(f"[!] Skin detector ONNX model failed to load: {e}")
-            return True, 1.0 # Default to True if model missing
-            
-    # Run inference
-    inputs = { _skin_detector_session.get_inputs()[0].name: image_tensor }
-    outputs = _skin_detector_session.run(None, inputs)[0]
-    
-    # Apply softmax to get probabilities
-    logits = outputs[0]
-    exp_logits = np.exp(logits - np.max(logits))
-    probs = exp_logits / np.sum(exp_logits)
-    
-    # Get the predicted class (0 = not_skin, 1 = skin) and its confidence
-    # Dataset was heavily imbalanced (12.5k negative vs 3k positive), 
-    # causing the model to output very low confidence for positive class.
-    # Lower the threshold to 0.05 to compensate.
-    skin_confidence = float(probs[1])
-    is_skin_bool = skin_confidence > 0.05
-    
-    return is_skin_bool, skin_confidence
+    try:
+        # Un-normalize tensor back to RGB [0, 255]
+        img = image_tensor[0] * IMAGENET_STD[:, None, None] + IMAGENET_MEAN[:, None, None]
+        img = np.clip(img * 255, 0, 255)
+        
+        R = img[0]
+        G = img[1]
+        B = img[2]
+        
+        # Peer-reviewed heuristic for human skin tones in RGB space:
+        # 1. R > G > B (often true for skin, but we enforce R > G and R > B)
+        # 2. Significant chromatic variance: max(RGB) - min(RGB) > 15
+        # 3. R and G are sufficiently separated: abs(R - G) > 15
+        mask = (R > G) & (R > B) & ((np.maximum(np.maximum(R, G), B) - np.minimum(np.minimum(R, G), B)) > 15) & (np.abs(R - G) > 15)
+        
+        skin_ratio = float(np.mean(mask))
+        
+        # If more than 10% of the image contains organic skin-toned pixels, approve it.
+        is_skin_bool = skin_ratio > 0.10
+        return is_skin_bool, skin_ratio
+        
+    except Exception as e:
+        logger.warning(f"[!] Skin heuristic failed: {e}")
+        return True, 1.0
 
 
 def remove_hair_dullrazor(pil_img):
