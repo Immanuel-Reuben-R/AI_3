@@ -70,6 +70,39 @@ def predict_with_tta(session, image_tensor):
     probs = [run_inference(session, np.ascontiguousarray(v)) for v in (v1, v2, v3, v4, v5)]
     return float(np.mean(probs))
 
+# Global session for the skin detector
+_skin_detector_session = None
+
+def is_skin(image_tensor):
+    """
+    Returns True if the image is human skin, False otherwise.
+    Expects the same normalized image_tensor used by the lesion model.
+    """
+    global _skin_detector_session
+    if _skin_detector_session is None:
+        try:
+            # Fallback path if deployed or local
+            model_path = Path(__file__).resolve().parent / "skin_detector_model.onnx"
+            if not model_path.exists():
+                model_path = Path(os.environ.get("SKIN_MODEL_PATH", "skin_detector_model.onnx"))
+            
+            sess_options = ort.SessionOptions()
+            sess_options.intra_op_num_threads = 1
+            _skin_detector_session = ort.InferenceSession(
+                str(model_path), sess_options=sess_options, providers=["CPUExecutionProvider"]
+            )
+        except Exception as e:
+            logger.warning(f"[!] Skin detector ONNX model failed to load: {e}")
+            return True # Default to True if model missing
+            
+    # Run inference
+    inputs = { _skin_detector_session.get_inputs()[0].name: image_tensor }
+    outputs = _skin_detector_session.run(None, inputs)[0]
+    
+    # Get the predicted class (0 = not_skin, 1 = skin)
+    predicted_class = np.argmax(outputs, axis=1)[0]
+    return predicted_class == 1
+
 
 def remove_hair_dullrazor(pil_img):
     """

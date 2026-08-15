@@ -47,13 +47,9 @@ from model_factory import (
     remove_hair_dullrazor,
     calculate_abcde_scores,
     predict_lightweight_numpy,
-    generate_numpy_heatmap
+    generate_numpy_heatmap,
+    is_skin
 )
-
-try:
-    from skin_filter import is_skin_present
-except ImportError:
-    is_skin_present = None
 
 Image.MAX_IMAGE_PIXELS = 40000000
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
@@ -280,16 +276,6 @@ def inference():
 
         raw_image = Image.open(filepath).convert("RGB")
 
-        if is_skin_present is not None:
-            has_skin, ratio = is_skin_present(str(filepath))
-            if not has_skin:
-                return jsonify({
-                    "error": f"Invalid image. The AI segmentation model detected it is not skin.",
-                    "success": False, 
-                    "not_skin": True,
-                    "skin_ratio": round(ratio, 4)
-                }), 400
-
         use_tta = req_data.get("use_tta", False)
         use_hair_removal = req_data.get("use_hair_removal", False)
         custom_threshold = req_data.get("threshold", None)
@@ -303,10 +289,21 @@ def inference():
             processed_image.save(TEMP_UPLOAD_DIR / processed_filename, format="JPEG")
 
         if MODEL is None:
+            # Fallback lightweight check
             probability = predict_lightweight_numpy(processed_image)
         else:
             img_size = MODEL_META.get("image_size", 224)
             image_tensor = preprocess(processed_image, img_size)
+
+            # ==========================================
+            # Binary Skin Pre-Filter Check (ONNX)
+            # ==========================================
+            if not is_skin(image_tensor):
+                return jsonify({
+                    "error": "Invalid Image: The AI detected this is not a photo of human skin.",
+                    "success": False
+                }), 400
+            # ==========================================
 
             if use_tta:
                 probability = predict_with_tta(MODEL, image_tensor)
