@@ -50,6 +50,11 @@ from model_factory import (
     generate_numpy_heatmap
 )
 
+try:
+    from skin_filter import is_skin_present
+except ImportError:
+    is_skin_present = None
+
 Image.MAX_IMAGE_PIXELS = 40000000
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 app.config['MAX_CONTENT_LENGTH'] = 15 * 1024 * 1024
@@ -274,6 +279,17 @@ def inference():
             return jsonify({"error": "Image not found"}), 404
 
         raw_image = Image.open(filepath).convert("RGB")
+
+        if is_skin_present is not None:
+            has_skin, ratio = is_skin_present(str(filepath))
+            if not has_skin:
+                return jsonify({
+                    "error": f"Invalid image. The AI segmentation model detected it is not skin.",
+                    "success": False, 
+                    "not_skin": True,
+                    "skin_ratio": round(ratio, 4)
+                }), 400
+
         use_tta = req_data.get("use_tta", False)
         use_hair_removal = req_data.get("use_hair_removal", False)
         custom_threshold = req_data.get("threshold", None)
