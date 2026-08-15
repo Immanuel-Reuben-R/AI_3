@@ -272,23 +272,23 @@ def inference():
             processed_image.save(buffered, format="JPEG")
             processed_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+        img_size = MODEL_META.get("image_size", 224)
+        image_tensor = preprocess(processed_image, img_size)
+
+        # ==========================================
+        # Binary Skin Pre-Filter Check (ONNX)
+        # ==========================================
+        if not is_skin(image_tensor):
+            return jsonify({
+                "error": "Invalid Image: The AI detected this is not a photo of human skin.",
+                "success": False
+            }), 400
+        # ==========================================
+
         if MODEL is None:
             # Fallback lightweight check
             probability = predict_lightweight_numpy(processed_image)
         else:
-            img_size = MODEL_META.get("image_size", 224)
-            image_tensor = preprocess(processed_image, img_size)
-
-            # ==========================================
-            # Binary Skin Pre-Filter Check (ONNX)
-            # ==========================================
-            if not is_skin(image_tensor):
-                return jsonify({
-                    "error": "Invalid Image: The AI detected this is not a photo of human skin.",
-                    "success": False
-                }), 400
-            # ==========================================
-
             if use_tta:
                 probability = predict_with_tta(MODEL, image_tensor)
             else:
@@ -372,7 +372,12 @@ def heatmap():
             return jsonify({"error": f"Invalid image base64: {str(e)}"}), 400
 
         with _gradcam_lock:
-            # Grad-CAM requires autograd (torch) which this deployment doesn't
+            # 1. Skin Pre-Filter Check
+            image_tensor = preprocess(image, 224)
+            if not is_skin(image_tensor):
+                return jsonify({"error": "Invalid Image: Not skin.", "success": False}), 400
+
+            # 2. Grad-CAM requires autograd (torch) which this deployment doesn't
             # bundle to keep function size under the platform limit. Using the
             # NumPy gradient-based heatmap for all cases instead.
             heatmap_img = generate_numpy_heatmap(image)
@@ -408,6 +413,10 @@ def abcde():
             image = get_image_from_b64(image_b64)
         except Exception as e:
             return jsonify({"error": f"Invalid image base64: {str(e)}"}), 400
+
+        image_tensor = preprocess(image, 224)
+        if not is_skin(image_tensor):
+            return jsonify({"error": "Invalid Image: Not skin.", "success": False}), 400
 
         abcde_analysis = calculate_abcde_scores(image, float(probability))
         
