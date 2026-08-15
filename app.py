@@ -24,8 +24,6 @@ from flask import Flask, jsonify, request, send_from_directory, url_for
 from flask_cors import CORS
 from PIL import Image
 
-import torch
-from torchvision import transforms
 import qrcode
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -36,11 +34,11 @@ os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
 sys.path.append(str(PROJECT_ROOT))
 from model_factory import (
     MODEL_SEARCH_PATHS,
-    build_model,
+    load_onnx_session,
+    preprocess,
+    run_inference,
     predict_with_tta,
     remove_hair_dullrazor,
-    GradCAM,
-    overlay_gradcam,
     calculate_abcde_scores,
     predict_lightweight_numpy,
     generate_numpy_heatmap
@@ -108,15 +106,14 @@ def generate_qr_code_b64(url):
         return None
 
 
-# Conserve CPU & RAM on memory-constrained cloud environments
-try:
-    torch.set_num_threads(1)
-except Exception:
-    pass
+# TODO: fill these in from the printed output of convert_to_onnx.py
+CHECKPOINT_ARCH = "resnet50"
+CHECKPOINT_IMAGE_SIZE = 224
+CHECKPOINT_THRESHOLD = 0.41
 
 
 def locate_checkpoint():
-    """Finds valid PyTorch model file (> 1 MB) across target paths, skipping Git LFS text pointers."""
+    """Finds the ONNX model file (> 1 MB) across target paths."""
     for p in MODEL_SEARCH_PATHS:
         try:
             if p.exists() and p.is_file() and p.stat().st_size > 1_000_000:
@@ -127,93 +124,52 @@ def locate_checkpoint():
 
 
 def load_model_instance():
+    """
+    Loads the ONNX Runtime session. If no checkpoint is found, MODEL stays
+    None and callers must not present predict_lightweight_numpy results as
+    if they came from the trained model -- flag them as synthetic/demo output
+    in the UI.
+    """
     global MODEL, DEVICE, MODEL_META
     with _model_lock:
         if MODEL is not None:
             return True
 
         try:
-            torch.set_grad_enabled(False)
-            DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-            # Check if running on Render free tier (512MB RAM limit) or local environment
-            is_render = os.environ.get("RENDER") is not None
+            DEVICE = "cpu"
             checkpoint_path = locate_checkpoint()
 
-            if is_render or not checkpoint_path:
-                app.logger.info("[*] Cloud/Lightweight mode active: Initializing MobileNetV2 (14MB RAM)...")
-                model = build_model(arch="mobilenet_v2", num_classes=1, pretrained=False)
+            if not checkpoint_path:
+                app.logger.warning("[!] No ONNX checkpoint found. Falling back to lightweight numpy heuristic.")
                 MODEL_META = {
-                    "checkpoint_path": "MobileNetV2 Skin Cancer Classifier",
-                    "arch": "mobilenet_v2",
+                    "checkpoint_path": None,
+                    "arch": None,
                     "image_size": 224,
                     "threshold": 0.41,
-                    "device": str(DEVICE),
-                    "loaded": True,
+                    "device": DEVICE,
+                    "loaded": False,
                     "synthetic": True
                 }
-            else:
-                app.logger.info(f"[*] Loading PyTorch model checkpoint: {checkpoint_path}")
-                checkpoint = None
-                try:
-                    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True, mmap=True)
-                except Exception as load_err:
-                    try:
-                        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-                    except Exception as load_err2:
-                        app.logger.error(f"[!] Model file is LFS pointer or invalid ({load_err2}). Using MobileNetV2...")
+                return False
 
-                if checkpoint is None:
-                    model = build_model(arch="mobilenet_v2", num_classes=1, pretrained=False)
-                    MODEL_META = {
-                        "checkpoint_path": "MobileNetV2 Skin Cancer Classifier",
-                        "arch": "mobilenet_v2",
-                        "image_size": 224,
-                        "threshold": 0.41,
-                        "device": str(DEVICE),
-                        "loaded": True,
-                        "synthetic": True
-                    }
-                else:
-                    if isinstance(checkpoint, dict):
-                        state_dict = checkpoint.pop("model_state_dict", checkpoint)
-                        arch = checkpoint.get("model_arch", "resnet50")
-                        img_size = checkpoint.get("image_size", 300)
-                        threshold = float(checkpoint.get("decision_threshold", 0.41))
-                        del checkpoint
-                    else:
-                        state_dict = checkpoint
-                        arch = "resnet50"
-                        img_size = 224
-                        threshold = 0.41
+            app.logger.info(f"[*] Loading ONNX model checkpoint: {checkpoint_path}")
+            session = load_onnx_session(checkpoint_path)
 
-                    model = build_model(arch=arch, num_classes=1, pretrained=False)
-                    try:
-                        model.load_state_dict(state_dict)
-                    except Exception:
-                        model = build_model(arch=arch, num_classes=1, pretrained=False, legacy_head=True)
-                        model.load_state_dict(state_dict)
+            MODEL = session
+            MODEL_META = {
+                "checkpoint_path": str(checkpoint_path),
+                "arch": CHECKPOINT_ARCH,
+                "image_size": CHECKPOINT_IMAGE_SIZE,
+                "threshold": CHECKPOINT_THRESHOLD,
+                "device": DEVICE,
+                "loaded": True,
+                "synthetic": False
+            }
 
-                    del state_dict
-
-                    MODEL_META = {
-                        "checkpoint_path": str(checkpoint_path),
-                        "arch": arch,
-                        "image_size": img_size,
-                        "threshold": threshold,
-                        "device": str(DEVICE),
-                        "loaded": True,
-                        "synthetic": False
-                    }
-
-            model = model.to(DEVICE)
-            model.eval()
-            MODEL = model
-
-            app.logger.info(f"[OK] PyTorch Skin Cancer Model loaded successfully on {DEVICE}")
+            app.logger.info("[OK] ONNX Skin Cancer Model loaded successfully")
             return True
         except Exception as e:
-            app.logger.error(f"[ERROR] Failed loading PyTorch model: {e}")
+            app.logger.error(f"[ERROR] Failed loading ONNX model: {e}")
             MODEL_META = {"loaded": False, "error": str(e)}
             return False
 
@@ -324,25 +280,16 @@ def inference():
             processed_filename = f"{file_uuid}_processed.jpg"
             processed_image.save(TEMP_UPLOAD_DIR / processed_filename, format="JPEG")
 
-        if os.environ.get("RENDER") or MODEL is None:
+        if MODEL is None:
             probability = predict_lightweight_numpy(processed_image)
         else:
             img_size = MODEL_META.get("image_size", 224)
-            transform = transforms.Compose([
-                transforms.Resize((img_size, img_size)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
-
-            image_tensor = transform(processed_image).unsqueeze(0).to(DEVICE)
+            image_tensor = preprocess(processed_image, img_size)
 
             if use_tta:
-                prob_tensor = predict_with_tta(MODEL, image_tensor)
-                probability = float(prob_tensor.cpu().item())
+                probability = predict_with_tta(MODEL, image_tensor)
             else:
-                with torch.no_grad():
-                    output = MODEL(image_tensor)
-                    probability = float(torch.sigmoid(output).cpu().item())
+                probability = run_inference(MODEL, image_tensor)
 
         threshold = MODEL_META.get("threshold", 0.41)
         if custom_threshold is not None:
@@ -430,35 +377,12 @@ def heatmap():
         heatmap_path = TEMP_UPLOAD_DIR / heatmap_filename
 
         with _gradcam_lock:
-            if os.environ.get("RENDER") or MODEL is None:
-                heatmap_img = generate_numpy_heatmap(image)
-                if heatmap_img:
-                    heatmap_img.save(heatmap_path, format="JPEG")
-            else:
-                img_size = MODEL_META.get("image_size", 224)
-                transform = transforms.Compose([
-                    transforms.Resize((img_size, img_size)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                ])
-
-                image_tensor = transform(image).unsqueeze(0).to(DEVICE)
-                
-                target_layer = None
-                if hasattr(MODEL, "layer4"):
-                    target_layer = MODEL.layer4[-1]
-                elif hasattr(MODEL, "features"):
-                    target_layer = MODEL.features[-1]
-
-                if target_layer is not None:
-                    cam_engine = GradCAM(MODEL, target_layer)
-                    try:
-                        cam_arr = cam_engine.generate_heatmap(image_tensor)
-                        heatmap_img = overlay_gradcam(image, cam_arr)
-                        if heatmap_img:
-                            heatmap_img.save(heatmap_path, format="JPEG")
-                    finally:
-                        cam_engine.remove_hooks()
+            # Grad-CAM requires autograd (torch) which this deployment doesn't
+            # bundle to keep function size under the platform limit. Using the
+            # NumPy gradient-based heatmap for all cases instead.
+            heatmap_img = generate_numpy_heatmap(image)
+            if heatmap_img:
+                heatmap_img.save(heatmap_path, format="JPEG")
 
         if not heatmap_path.exists():
             return jsonify({"error": "Failed to generate heatmap", "success": False}), 500
