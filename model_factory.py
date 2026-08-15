@@ -93,7 +93,7 @@ def is_skin(image_tensor):
             )
         except Exception as e:
             logger.warning(f"[!] Skin detector ONNX model failed to load: {e}")
-            return True # Default to True if model missing
+            return True, 1.0 # Default to True if model missing
             
     # Run inference
     inputs = { _skin_detector_session.get_inputs()[0].name: image_tensor }
