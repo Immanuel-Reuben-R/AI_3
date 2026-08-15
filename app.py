@@ -234,28 +234,12 @@ def get_network_info():
     })
 
 
-@app.route("/api/upload", methods=["POST"])
-def upload():
-    try:
-        if "image" not in request.files:
-            return jsonify({"error": "No image provided"}), 400
-        
-        file_obj = request.files["image"]
-        raw_image = Image.open(file_obj.stream).convert("RGB")
-        
-        file_uuid = str(uuid.uuid4())
-        filename = f"{file_uuid}.jpg"
-        filepath = TEMP_UPLOAD_DIR / filename
-        
-        raw_image.save(filepath, format="JPEG")
-        
-        return jsonify({
-            "success": True,
-            "uuid": file_uuid,
-            "url": f"/temp_uploads/{filename}"
-        })
-    except Exception as err:
-        return jsonify({"error": f"Upload error: {str(err)}", "success": False}), 500
+def get_image_from_b64(image_b64):
+    """Decodes a base64 string into a PIL Image."""
+    if "," in image_b64:
+        image_b64 = image_b64.split(",")[1]
+    image_data = base64.b64decode(image_b64)
+    return Image.open(io.BytesIO(image_data)).convert("RGB")
 
 
 @app.route("/api/inference", methods=["POST"])
@@ -266,15 +250,14 @@ def inference():
             load_model_instance()
 
         req_data = request.get_json() or {}
-        file_uuid = req_data.get("uuid")
-        if not file_uuid:
-            return jsonify({"error": "UUID not provided"}), 400
+        image_b64 = req_data.get("image_b64")
+        if not image_b64:
+            return jsonify({"error": "image_b64 not provided"}), 400
             
-        filepath = TEMP_UPLOAD_DIR / f"{file_uuid}.jpg"
-        if not filepath.exists():
-            return jsonify({"error": "Image not found"}), 404
-
-        raw_image = Image.open(filepath).convert("RGB")
+        try:
+            raw_image = get_image_from_b64(image_b64)
+        except Exception as e:
+            return jsonify({"error": f"Invalid image base64: {str(e)}"}), 400
 
         use_tta = req_data.get("use_tta", False)
         use_hair_removal = req_data.get("use_hair_removal", False)
@@ -285,8 +268,9 @@ def inference():
         if use_hair_removal:
             processed_image = remove_hair_dullrazor(raw_image)
             hair_removed = True
-            processed_filename = f"{file_uuid}_processed.jpg"
-            processed_image.save(TEMP_UPLOAD_DIR / processed_filename, format="JPEG")
+            buffered = io.BytesIO()
+            processed_image.save(buffered, format="JPEG")
+            processed_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
 
         if MODEL is None:
             # Fallback lightweight check
@@ -364,7 +348,7 @@ def inference():
         }
         
         if hair_removed:
-            response["processed_url"] = f"/temp_uploads/{file_uuid}_processed.jpg"
+            response["processed_b64"] = processed_b64
 
         return jsonify(response)
 
@@ -378,22 +362,14 @@ def inference():
 def heatmap():
     try:
         req_data = request.get_json() or {}
-        file_uuid = req_data.get("uuid")
-        if not file_uuid:
-            return jsonify({"error": "UUID not provided"}), 400
+        image_b64 = req_data.get("image_b64")
+        if not image_b64:
+            return jsonify({"error": "image_b64 not provided"}), 400
             
-        use_processed = req_data.get("use_processed", False)
-        
-        filename = f"{file_uuid}_processed.jpg" if use_processed else f"{file_uuid}.jpg"
-        filepath = TEMP_UPLOAD_DIR / filename
-        if not filepath.exists():
-            filepath = TEMP_UPLOAD_DIR / f"{file_uuid}.jpg"
-            if not filepath.exists():
-                return jsonify({"error": "Image not found"}), 404
-
-        image = Image.open(filepath).convert("RGB")
-        heatmap_filename = f"{file_uuid}_heatmap.jpg"
-        heatmap_path = TEMP_UPLOAD_DIR / heatmap_filename
+        try:
+            image = get_image_from_b64(image_b64)
+        except Exception as e:
+            return jsonify({"error": f"Invalid image base64: {str(e)}"}), 400
 
         with _gradcam_lock:
             # Grad-CAM requires autograd (torch) which this deployment doesn't
@@ -401,14 +377,15 @@ def heatmap():
             # NumPy gradient-based heatmap for all cases instead.
             heatmap_img = generate_numpy_heatmap(image)
             if heatmap_img:
-                heatmap_img.save(heatmap_path, format="JPEG")
-
-        if not heatmap_path.exists():
-            return jsonify({"error": "Failed to generate heatmap", "success": False}), 500
+                buffered = io.BytesIO()
+                heatmap_img.save(buffered, format="JPEG")
+                heatmap_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
+            else:
+                return jsonify({"error": "Failed to generate heatmap", "success": False}), 500
 
         return jsonify({
             "success": True,
-            "url": f"/temp_uploads/{heatmap_filename}"
+            "heatmap_b64": heatmap_b64
         })
 
     except Exception as err:
@@ -421,17 +398,17 @@ def heatmap():
 def abcde():
     try:
         req_data = request.get_json() or {}
-        file_uuid = req_data.get("uuid")
+        image_b64 = req_data.get("image_b64")
         probability = req_data.get("probability", 0.5)
         
-        if not file_uuid:
-            return jsonify({"error": "UUID not provided"}), 400
+        if not image_b64:
+            return jsonify({"error": "image_b64 not provided"}), 400
             
-        filepath = TEMP_UPLOAD_DIR / f"{file_uuid}.jpg"
-        if not filepath.exists():
-            return jsonify({"error": "Image not found"}), 404
+        try:
+            image = get_image_from_b64(image_b64)
+        except Exception as e:
+            return jsonify({"error": f"Invalid image base64: {str(e)}"}), 400
 
-        image = Image.open(filepath).convert("RGB")
         abcde_analysis = calculate_abcde_scores(image, float(probability))
         
         return jsonify({
@@ -450,7 +427,7 @@ def analyze_gemini():
     """Generates visual analysis and clinical narrative using Gemini AI Vision API."""
     data = request.get_json() or {}
     api_key = data.get("api_key") or os.environ.get("GEMINI_API_KEY", "")
-    file_uuid = data.get("uuid")
+    image_b64 = data.get("image_b64")
     
     if not api_key:
         return jsonify({
@@ -458,19 +435,17 @@ def analyze_gemini():
             "error": "Gemini API key is missing. AI analysis unavailable."
         })
 
-    if not file_uuid:
-        return jsonify({"error": "UUID not provided", "success": False}), 400
+    if not image_b64:
+        return jsonify({"error": "image_b64 not provided", "success": False}), 400
 
     try:
         import urllib.request
         import urllib.parse
         
-        filepath = TEMP_UPLOAD_DIR / f"{file_uuid}.jpg"
-        if not filepath.exists():
-            return jsonify({"error": "Image not found"}), 404
-            
-        with open(filepath, "rb") as f:
-            clean_b64 = base64.b64encode(f.read()).decode("utf-8")
+        if "," in image_b64:
+            clean_b64 = image_b64.split(",")[1]
+        else:
+            clean_b64 = image_b64
 
         prompt_text = (
             "You are an expert dermatological AI consultant analyzing a high-resolution skin lesion image. "

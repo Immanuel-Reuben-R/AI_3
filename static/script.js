@@ -368,23 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         runScanBtn.querySelector('span').textContent = 'ANALYZING LESION...';
 
         try {
-            // 1. Upload Pivot
-            const resBlob = await fetch(state.currentImageB64);
-            const blob = await resBlob.blob();
-            const formData = new FormData();
-            formData.append('image', blob, 'image.jpg');
-
-
-            const uploadResp = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            });
-            const uploadData = await uploadResp.json();
-            if (!uploadData.success) throw new Error(uploadData.error || "Upload failed");
-            
-            state.currentUuid = uploadData.uuid;
-
-            // 2. Parallel Fetches
+            // 1. Parallel Fetches
             const use_hair_removal = hairRemovalToggle.checked;
             
             const [infResp, heatResp] = await Promise.all([
@@ -392,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        uuid: state.currentUuid,
+                        image_b64: state.currentImageB64,
                         use_tta: ttaToggle.checked,
                         use_hair_removal: use_hair_removal,
                         threshold: parseFloat(thresholdSlider.value)
@@ -402,7 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        uuid: state.currentUuid,
+                        image_b64: state.currentImageB64,
                         use_processed: use_hair_removal
                     })
                 })
@@ -413,12 +397,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (!infData.success) throw new Error(infData.error || "Inference failed");
 
-            // 3. Sequential Fetch for ABCDE
+            // 2. Sequential Fetch for ABCDE
             const abcdeResp = await fetch('/api/abcde', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    uuid: state.currentUuid,
+                    image_b64: state.currentImageB64,
                     probability: infData.probability
                 })
             });
@@ -426,13 +410,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = {
                 ...infData,
-                heatmap_url: heatData.heatmap_url,
+                heatmap_url: heatData.heatmap_b64,
                 abcde: abcdeData.abcde
             };
 
             state.lastPrediction = data;
-            state.processedImageUrl = infData.processed_url ? infData.processed_url : null;
-            state.heatmapImageUrl = heatData.heatmap_url ? heatData.heatmap_url : null;
+            state.processedImageUrl = infData.processed_b64 ? infData.processed_b64 : null;
+            state.heatmapImageUrl = heatData.heatmap_b64 ? heatData.heatmap_b64 : null;
 
             updateDashboardUI(data);
             switchTab('tab-dashboard');
@@ -578,7 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Gemini AI Consultation
     // ---------------------------------------------------------
     fetchGeminiBtn.addEventListener('click', async () => {
-        if (!state.currentUuid) {
+        if (!state.currentImageB64) {
             alert('Please select and scan an image first.');
             return;
         }
@@ -589,7 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await fetch('/api/analyze-gemini', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uuid: state.currentUuid })
+                body: JSON.stringify({ image_b64: state.currentImageB64 })
             });
             const data = await resp.json();
             if (data.success) {
