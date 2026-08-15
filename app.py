@@ -278,7 +278,10 @@ def inference():
         # ==========================================
         # Binary Skin Pre-Filter Check (ONNX)
         # ==========================================
-        if not is_skin(image_tensor):
+        skin_result, skin_confidence = is_skin(image_tensor)
+        app.logger.info(f"[DEBUG] is_skin={skin_result} confidence={skin_confidence:.4f}")
+        
+        if not skin_result:
             return jsonify({
                 "error": "Invalid Image: The AI detected this is not a photo of human skin.",
                 "success": False
@@ -374,7 +377,9 @@ def heatmap():
         with _gradcam_lock:
             # 1. Skin Pre-Filter Check
             image_tensor = preprocess(image, 224)
-            if not is_skin(image_tensor):
+            skin_result, skin_confidence = is_skin(image_tensor)
+            app.logger.info(f"[DEBUG HEATMAP] is_skin={skin_result} confidence={skin_confidence:.4f}")
+            if not skin_result:
                 return jsonify({"error": "Invalid Image: Not skin.", "success": False}), 400
 
             # 2. Grad-CAM requires autograd (torch) which this deployment doesn't
@@ -415,7 +420,9 @@ def abcde():
             return jsonify({"error": f"Invalid image base64: {str(e)}"}), 400
 
         image_tensor = preprocess(image, 224)
-        if not is_skin(image_tensor):
+        skin_result, skin_confidence = is_skin(image_tensor)
+        app.logger.info(f"[DEBUG ABCDE] is_skin={skin_result} confidence={skin_confidence:.4f}")
+        if not skin_result:
             return jsonify({"error": "Invalid Image: Not skin.", "success": False}), 400
 
         abcde_analysis = calculate_abcde_scores(image, float(probability))

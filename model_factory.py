@@ -99,9 +99,16 @@ def is_skin(image_tensor):
     inputs = { _skin_detector_session.get_inputs()[0].name: image_tensor }
     outputs = _skin_detector_session.run(None, inputs)[0]
     
-    # Get the predicted class (0 = not_skin, 1 = skin)
-    predicted_class = np.argmax(outputs, axis=1)[0]
-    return predicted_class == 1
+    # Apply softmax to get probabilities
+    logits = outputs[0]
+    exp_logits = np.exp(logits - np.max(logits))
+    probs = exp_logits / np.sum(exp_logits)
+    
+    # Get the predicted class (0 = not_skin, 1 = skin) and its confidence
+    predicted_class = np.argmax(probs)
+    skin_confidence = float(probs[1])
+    
+    return predicted_class == 1, skin_confidence
 
 
 def remove_hair_dullrazor(pil_img):
